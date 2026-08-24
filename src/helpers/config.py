@@ -1,21 +1,45 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
+from typing import List, Optional
 
 
 class Settings(BaseSettings):
+    # App Settings
     APP_NAME: str
     APP_VERSION: str
-    GROQ_API_KEY: str
+    GROQ_API_KEY: Optional[str] = None
 
-    FILE_ALLOWED_TYPES: list
+    # File Settings
+    FILE_ALLOWED_TYPES: List[str]
     FILE_MAX_SIZE: int
-    FILE_DEFAULT_CHUNK_SIZE : int
+    FILE_DEFAULT_CHUNK_SIZE: int
+
+    # Database Settings
     MONGODB_URL: str
     MONGODB_DATABASE: str
-    
 
-    class Config:
-        env_file = ".env"
+    # LLM & Models Settings
+    GENERATION_BACKEND: str
+    EMBEDDING_BACKEND: str
+    OPENAI_API_KEY: Optional[str] = None
+    OPENAI_API_URL: Optional[str] = None
+    COHERE_API_KEY: Optional[str] = None
+    GEMINI_API_KEY: Optional[str] = None
+
+    GENERATION_MODEL_ID: str
+    EMBEDDING_MODEL_ID: str
+    EMBEDDING_MODEL_SIZE: int
+
+    # Defaults
+    INPUT_DAFAULT_MAX_CHARACTERS: int
+    GENERATION_DAFAULT_MAX_TOKENS: int
+    GENERATION_DAFAULT_TEMPERATURE: float
+
+    # Config (Pydantic v2)
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        extra="ignore"  # لتجاهل أي متغيرات زوائد مستقبلاً بدون رفع Exception
+    )
 
 
-def get_settings():
+def get_settings() -> Settings:
     return Settings()
