@@ -2,8 +2,10 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from helpers.config import get_settings
 from motor.motor_asyncio import AsyncIOMotorClient
-from routes import base, data
+from routes import base, data, nlp
 from stores.llm.LLMProviderFactory import LLMProviderFactory
+#  1. استدعاء الـ Factory
+from stores.vectordb.VectorDBProviderFactory import VectorDBProviderFactory
 
 
 @asynccontextmanager
@@ -14,6 +16,8 @@ async def lifespan(app: FastAPI):
     app.db_client = app.mongo_conn[settings.MONGODB_DATABASE]
 
     llm_provider_factory = LLMProviderFactory(settings)
+    #  2. إنشـاء كائن الـ Factory
+    vectordb_provider_factory = VectorDBProviderFactory(settings)
 
     # Generation Client
     app.generation_client = llm_provider_factory.create(
@@ -32,13 +36,22 @@ async def lifespan(app: FastAPI):
         embedding_size=settings.EMBEDDING_MODEL_SIZE,
     )
 
+    #  3. إنشاء الـ Vector DB Client وإسناده لـ app
+    app.vectordb_client = vectordb_provider_factory.create(
+        provider=settings.VECTOR_DB_BACKEND
+    )
+    app.vectordb_client.connect()
+
     yield
 
     # Shutdown Logic
     app.mongo_conn.close()
+    if hasattr(app.vectordb_client, "disconnect"):
+        app.vectordb_client.disconnect()
 
 
 app = FastAPI(lifespan=lifespan)
 
 app.include_router(base.base_router)
 app.include_router(data.data_router)
+app.include_router(nlp.nlp_router)

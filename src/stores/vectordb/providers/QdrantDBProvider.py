@@ -3,11 +3,12 @@ from ..VectorDBInterface import VectorDBInterface
 from ..VectorDBEnums import DistanceMethodEnums
 import logging
 from typing import List
+import uuid  # أضيف لتوليد IDs تلقائية عند الحاجة
+
 
 class QdrantDBProvider(VectorDBInterface):
 
     def __init__(self, db_path: str, distance_method: str):
-
         self.client = None
         self.db_path = db_path
         self.distance_method = None
@@ -39,8 +40,8 @@ class QdrantDBProvider(VectorDBInterface):
             return self.client.delete_collection(collection_name=collection_name)
         
     def create_collection(self, collection_name: str, 
-                                embedding_size: int,
-                                do_reset: bool = False):
+                           embedding_size: int,
+                           do_reset: bool = False):
         if do_reset:
             _ = self.delete_collection(collection_name=collection_name)
         
@@ -52,33 +53,37 @@ class QdrantDBProvider(VectorDBInterface):
                     distance=self.distance_method
                 )
             )
-
             return True
         
         return False
     
     def insert_one(self, collection_name: str, text: str, vector: list,
-                         metadata: dict = None, 
-                         record_id: str = None):
+                          metadata: dict = None, 
+                          record_id: str = None):
         
         if not self.is_collection_existed(collection_name):
             self.logger.error(f"Can not insert new record to non-existed collection: {collection_name}")
             return False
         
+        # التأكد من وجود ID لكل عنصر
+        doc_id = record_id if record_id is not None else str(uuid.uuid4())
+
         try:
             _ = self.client.upload_records(
                 collection_name=collection_name,
                 records=[
                     models.Record(
+                        id=doc_id,  # إضافة id لتفادي ValidationError
                         vector=vector,
                         payload={
-                            "text": text, "metadata": metadata
+                            "text": text, 
+                            "metadata": metadata
                         }
                     )
                 ]
             )
         except Exception as e:
-            self.logger.error(f"Error while inserting batch: {e}")
+            self.logger.error(f"Error while inserting record: {e}")
             return False
 
         return True
@@ -88,7 +93,7 @@ class QdrantDBProvider(VectorDBInterface):
                           record_ids: list = None, batch_size: int = 50):
         
         if metadata is None:
-            metadata = [None] * len(texts) #to iterate on all of them 
+            metadata = [None] * len(texts)
 
         if record_ids is None:
             record_ids = [None] * len(texts)
@@ -99,15 +104,17 @@ class QdrantDBProvider(VectorDBInterface):
             batch_texts = texts[i:batch_end]
             batch_vectors = vectors[i:batch_end]
             batch_metadata = metadata[i:batch_end]
+            batch_record_ids = record_ids[i:batch_end]  # اقتطاع الـ IDs الخاصة بكل دفعة
 
             batch_records = [
                 models.Record(
+                    id=batch_record_ids[x] if batch_record_ids[x] is not None else str(uuid.uuid4()),  # تمرير الـ id أو توليده
                     vector=batch_vectors[x],
                     payload={
-                        "text": batch_texts[x], "metadata": batch_metadata[x]
+                        "text": batch_texts[x], 
+                        "metadata": batch_metadata[x]
                     }
                 )
-
                 for x in range(len(batch_texts))
             ]
 
@@ -123,10 +130,8 @@ class QdrantDBProvider(VectorDBInterface):
         return True
         
     def search_by_vector(self, collection_name: str, vector: list, limit: int = 5):
-
         return self.client.search(
             collection_name=collection_name,
             query_vector=vector,
             limit=limit
         )
-
