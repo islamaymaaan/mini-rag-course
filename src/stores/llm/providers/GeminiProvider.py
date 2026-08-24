@@ -2,7 +2,8 @@ import logging
 from google import genai
 from google.genai import types
 from ..LLMInterface import LLMInterface
-from ..LLMEnums import DocumentTypeEnum
+from ..LLMEnums import DocumentTypeEnum,GeminiEnums
+
 
 
 class GeminiProvider(LLMInterface):
@@ -26,6 +27,8 @@ class GeminiProvider(LLMInterface):
         self.embedding_size = None
 
         self.client = genai.Client(api_key=self.api_key)
+        self.enums = GeminiEnums
+
         self.logger = logging.getLogger(__name__)
 
     def set_generation_model(self, model_id: str):

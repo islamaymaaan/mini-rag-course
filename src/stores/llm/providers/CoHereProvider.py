@@ -24,6 +24,7 @@ class CoHereProvider(LLMInterface):
 
         # Current Cohere SDK
         self.client = cohere.ClientV2(api_key=self.api_key)
+        self.enums = CoHereEnums
 
         self.logger = logging.getLogger(__name__)
 
@@ -107,7 +108,19 @@ class CoHereProvider(LLMInterface):
             self.logger.error("Error while generating text with CoHere")
             return None
 
-        return response.message.content[0].text
+        # --- بداية التعديل لحل AttributeError ---
+        # تجميع كل الأجزاء النصية فقط وتخطي أجزاء الـ Thinking/Reasoning
+        text_parts = [
+            item.text for item in response.message.content
+            if hasattr(item, "text") and item.text
+        ]
+
+        if not text_parts:
+            self.logger.error("No valid text found in CoHere response content")
+            return None
+
+        return "".join(text_parts)
+        # --- نهاية التعديل ---
 
     def embed_text(self, text: str, document_type: str = None):
 
@@ -147,4 +160,3 @@ class CoHereProvider(LLMInterface):
             "role": role,
             "content": self.process_text(prompt)
         }
-
