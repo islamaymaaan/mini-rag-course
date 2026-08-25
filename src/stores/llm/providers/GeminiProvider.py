@@ -2,8 +2,7 @@ import logging
 from google import genai
 from google.genai import types
 from ..LLMInterface import LLMInterface
-from ..LLMEnums import DocumentTypeEnum,GeminiEnums
-
+from ..LLMEnums import DocumentTypeEnum, GeminiEnums
 
 
 class GeminiProvider(LLMInterface):
@@ -39,12 +38,14 @@ class GeminiProvider(LLMInterface):
         self.embedding_size = embedding_size
 
     def process_text(self, text: str):
+        if not text:
+            return ""
         return text[: self.default_input_max_characters].strip()
 
     def generate_text(
         self,
         prompt: str,
-        chat_history: list = [],
+        chat_history: list = None,
         max_output_tokens: int = None,
         temperature: float = None,
     ):
@@ -54,40 +55,76 @@ class GeminiProvider(LLMInterface):
 
         max_output_tokens = (
             max_output_tokens
-            if max_output_tokens
+            if max_output_tokens is not None
             else self.default_generation_max_output_tokens
         )
         temperature = (
             temperature
-            if temperature
+            if temperature is not None
             else self.default_generation_temperature
         )
 
         try:
-            config = types.GenerateContentConfig(
-                temperature=temperature,
-                max_output_tokens=max_output_tokens,
-            )
-
+            system_instruction = None
             contents = []
+
             if chat_history:
-                contents.extend(chat_history)
+                for message in chat_history:
+                    if isinstance(message, dict):
+                        role = message.get("role")
+                        content_text = message.get("content") or message.get("text", "")
+
+                        if role == "system":
+                            system_instruction = content_text
+                        else:
+                            contents.append(
+                                self.construct_prompt(prompt=content_text, role=role)
+                            )
+                    elif isinstance(message, types.Content):
+                        if message.role == "system":
+                            system_instruction = "".join(
+                                [part.text for part in message.parts if hasattr(part, "text") and part.text]
+                            )
+                        else:
+                            contents.append(message)
 
             contents.append(
                 self.construct_prompt(prompt=prompt, role="user")
             )
 
+            config = types.GenerateContentConfig(
+                temperature=temperature,
+                max_output_tokens=max_output_tokens,
+                system_instruction=system_instruction,
+            )
+
+            # تنظيف اسم الموديل في حال إدخال models/ بالخطأ
+            model_name = self.generation_model_id.replace("models/", "")
+
             response = self.client.models.generate_content(
-                model=self.generation_model_id,
+                model=model_name,
                 contents=contents,
                 config=config,
             )
 
-            if not response or not response.text:
-                self.logger.error("Error while generating text with Gemini")
+            if not response:
+                self.logger.error("Empty response object from Gemini")
                 return None
 
-            return response.text
+            if response.candidates and response.candidates[0].content:
+                text_parts = [
+                    part.text
+                    for part in response.candidates[0].content.parts
+                    if hasattr(part, "text") and part.text
+                ]
+                if text_parts:
+                    return "".join(text_parts)
+
+            if response.text:
+                return response.text
+
+            self.logger.error("No valid text found in Gemini response")
+            return None
 
         except Exception as e:
             self.logger.error(
@@ -102,15 +139,22 @@ class GeminiProvider(LLMInterface):
 
         try:
             task_type = "RETRIEVAL_DOCUMENT"
-            doc_enum_val = document_type.value if hasattr(document_type, 'value') else document_type
-            query_enum_val = DocumentTypeEnum.QUERY.value if hasattr(DocumentTypeEnum.QUERY, 'value') else DocumentTypeEnum.QUERY
-            
+            doc_enum_val = (
+                document_type.value
+                if hasattr(document_type, "value")
+                else document_type
+            )
+            query_enum_val = (
+                DocumentTypeEnum.QUERY.value
+                if hasattr(DocumentTypeEnum.QUERY, "value")
+                else DocumentTypeEnum.QUERY
+            )
+
             if doc_enum_val == query_enum_val:
                 task_type = "RETRIEVAL_QUERY"
 
-            model_name = self.embedding_model_id
-            if not model_name.startswith("models/"):
-                model_name = f"models/{model_name}"
+            # إزالة أي بادئة زائدة لضمان عدم حدوث خطأ 404
+            model_name = self.embedding_model_id.replace("models/", "")
 
             processed_text = self.process_text(text)
 
@@ -123,7 +167,11 @@ class GeminiProvider(LLMInterface):
                 ),
             )
 
-            if not response or not response.embeddings or len(response.embeddings) == 0:
+            if (
+                not response
+                or not response.embeddings
+                or len(response.embeddings) == 0
+            ):
                 self.logger.error("Error while embedding text with Gemini")
                 return None
 
@@ -136,7 +184,7 @@ class GeminiProvider(LLMInterface):
             return None
 
     def construct_prompt(self, prompt: str, role: str):
-        gemini_role = "model" if role == "assistant" else role
+        gemini_role = "model" if role in ["assistant", "model"] else "user"
         return types.Content(
             role=gemini_role,
             parts=[types.Part.from_text(text=self.process_text(prompt))],
