@@ -14,8 +14,11 @@ class Settings(BaseSettings):
     FILE_DEFAULT_CHUNK_SIZE: int
 
     # Database Settings
-    MONGODB_URL: str
-    MONGODB_DATABASE: str
+    POSTGRES_USERNAME: str
+    POSTGRES_PASSWORD: str
+    POSTGRES_HOST: str
+    POSTGRES_PORT: int
+    POSTGRES_MAIN_DATABASE: str
 
     # LLM & Models Settings
     GENERATION_BACKEND: str
