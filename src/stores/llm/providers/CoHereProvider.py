@@ -1,9 +1,9 @@
-from ..LLMInterface import LLMInterface
-from ..LLMEnums import CoHereEnums, DocumentTypeEnum
-
-import cohere
 import logging
 from typing import List, Union
+import cohere
+
+from ..LLMEnums import CoHereEnums, DocumentTypeEnum
+from ..LLMInterface import LLMInterface
 
 
 class CoHereProvider(LLMInterface):
@@ -63,13 +63,6 @@ class CoHereProvider(LLMInterface):
     # =========================================================
 
     def process_text(self, text: str):
-        """
-        Used for embedding input.
-
-        This limits the text passed to the embedding model.
-        The generation prompt should NOT use this method.
-        """
-
         if not text:
             return ""
 
@@ -92,7 +85,7 @@ class CoHereProvider(LLMInterface):
             if not isinstance(message, dict):
                 continue
 
-            role = message.get("role")
+            role = str(message.get("role", "")).lower().strip()
             content = message.get("content")
 
             if role not in {
@@ -108,7 +101,7 @@ class CoHereProvider(LLMInterface):
             cleaned_history.append(
                 {
                     "role": role,
-                    "content": content,
+                    "content": str(content),
                 }
             )
 
@@ -127,15 +120,11 @@ class CoHereProvider(LLMInterface):
     ):
 
         if not self.client:
-            self.logger.error(
-                "Cohere client was not set"
-            )
+            self.logger.error("Cohere client was not set")
             return None
 
         if not self.generation_model_id:
-            self.logger.error(
-                "Generation model for Cohere was not set"
-            )
+            self.logger.error("Generation model for Cohere was not set")
             return None
 
         if chat_history is None:
@@ -153,20 +142,12 @@ class CoHereProvider(LLMInterface):
             else self.default_generation_temperature
         )
 
-        messages = self._clean_chat_history(
-            chat_history
-        )
-
-        # IMPORTANT:
-        # Don't call process_text() here.
-        # RAG prompts can contain many retrieved chunks.
+        messages = self._clean_chat_history(chat_history)
 
         processed_prompt = prompt.strip()
 
         if not processed_prompt:
-            self.logger.error(
-                "Prompt is empty"
-            )
+            self.logger.error("Prompt is empty")
             return None
 
         messages.append(
@@ -177,7 +158,6 @@ class CoHereProvider(LLMInterface):
         )
 
         try:
-
             response = self.client.chat(
                 model=self.generation_model_id,
                 messages=messages,
@@ -186,46 +166,21 @@ class CoHereProvider(LLMInterface):
             )
 
         except Exception as e:
-
             self.logger.exception(
                 f"Error while generating text with Cohere: {e}"
             )
-
             return None
 
-        if not response:
-            self.logger.error(
-                "Empty response from Cohere"
-            )
-            return None
-
-        if not response.message:
-            self.logger.error(
-                "No message returned from Cohere"
-            )
-            return None
-
-        if not response.message.content:
-            self.logger.error(
-                "No content returned from Cohere"
-            )
+        if not response or not response.message or not response.message.content:
+            self.logger.error("Empty or invalid response structure from Cohere")
             return None
 
         for content in response.message.content:
-
-            text = getattr(
-                content,
-                "text",
-                None
-            )
-
+            text = getattr(content, "text", None)
             if text:
                 return text
 
-        self.logger.error(
-            "No text content found in Cohere response"
-        )
-
+        self.logger.error("No text content found in Cohere response")
         return None
 
     # =========================================================
@@ -239,39 +194,20 @@ class CoHereProvider(LLMInterface):
     ):
 
         if not self.client:
-            self.logger.error(
-                "Cohere client was not set"
-            )
+            self.logger.error("Cohere client was not set")
             return None
 
         if not self.embedding_model_id:
-            self.logger.error(
-                "Embedding model for Cohere was not set"
-            )
+            self.logger.error("Embedding model for Cohere was not set")
             return None
-
-        # -----------------------------------------------------
-        # Convert single string to list
-        # -----------------------------------------------------
 
         if isinstance(texts, str):
             texts = [texts]
 
-        # -----------------------------------------------------
-        # Determine input type
-        # -----------------------------------------------------
-
         input_type = "search_document"
 
-        if document_type == DocumentTypeEnum.QUERY:
+        if document_type == DocumentTypeEnum.QUERY or document_type == DocumentTypeEnum.QUERY.value:
             input_type = "search_query"
-
-        elif document_type == DocumentTypeEnum.QUERY.value:
-            input_type = "search_query"
-
-        # -----------------------------------------------------
-        # Process all texts
-        # -----------------------------------------------------
 
         processed_texts = [
             self.process_text(t)
@@ -280,17 +216,10 @@ class CoHereProvider(LLMInterface):
         ]
 
         if not processed_texts:
-            self.logger.error(
-                "No valid text provided for embedding"
-            )
+            self.logger.error("No valid text provided for embedding")
             return None
 
-        # -----------------------------------------------------
-        # Cohere V2 Embed
-        # -----------------------------------------------------
-
         try:
-
             response = self.client.embed(
                 model=self.embedding_model_id,
                 texts=processed_texts,
@@ -299,37 +228,17 @@ class CoHereProvider(LLMInterface):
             )
 
         except Exception as e:
-
             self.logger.exception(
                 f"Error while embedding text with Cohere: {e}"
             )
-
             return None
 
-        # -----------------------------------------------------
-        # Validate response
-        # -----------------------------------------------------
-
-        if not response:
-            self.logger.error(
-                "Empty embedding response from Cohere"
-            )
+        if not response or not response.embeddings or not response.embeddings.float:
+            self.logger.error("No float embeddings returned from Cohere")
             return None
 
-        if not response.embeddings:
-            self.logger.error(
-                "No embeddings returned from Cohere"
-            )
-            return None
-
-        if not response.embeddings.float:
-            self.logger.error(
-                "No float embeddings returned from Cohere"
-            )
-            return None
-
-        # Return ALL embeddings
         return response.embeddings.float
+
     # =========================================================
     # Prompt Construction
     # =========================================================
@@ -339,8 +248,7 @@ class CoHereProvider(LLMInterface):
         prompt: str,
         role: str
     ):
-
         return {
-            "role": role,
+            "role": str(role).lower().strip(),
             "content": prompt,
         }
