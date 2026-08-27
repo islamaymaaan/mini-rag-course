@@ -3,13 +3,10 @@ from fastapi import FastAPI
 from helpers.config import get_settings
 from routes import base, data, nlp
 from stores.llm.LLMProviderFactory import LLMProviderFactory
-#  1. استدعاء الـ Factory
 from stores.vectordb.VectorDBProviderFactory import VectorDBProviderFactory
 from stores.llm.templates.template_parser import TemplateParser
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
-
-
 
 
 @asynccontextmanager
@@ -26,8 +23,7 @@ async def lifespan(app: FastAPI):
     )
 
     llm_provider_factory = LLMProviderFactory(settings)
-    #  2. إنشـاء كائن الـ Factory
-    vectordb_provider_factory = VectorDBProviderFactory(settings)
+    vectordb_provider_factory = VectorDBProviderFactory(config=settings, db_client=app.db_client)
 
     # Generation Client
     app.generation_client = llm_provider_factory.create(
@@ -46,13 +42,12 @@ async def lifespan(app: FastAPI):
         embedding_size=settings.EMBEDDING_MODEL_SIZE,
     )
 
-    #  3. إنشاء الـ Vector DB Client وإسناده لـ app
+    # Vector DB Client
     app.vectordb_client = vectordb_provider_factory.create(
         provider=settings.VECTOR_DB_BACKEND
     )
-    app.vectordb_client.connect()
+    await app.vectordb_client.connect()
 
-    
     app.template_parser = TemplateParser(
         language=settings.PRIMARY_LANG,
         default_language=settings.DEFAULT_LANG,
@@ -63,7 +58,7 @@ async def lifespan(app: FastAPI):
     # Shutdown Logic
     await app.db_engine.dispose()
     if hasattr(app, "vectordb_client") and hasattr(app.vectordb_client, "disconnect"):
-        app.vectordb_client.disconnect()
+        await app.vectordb_client.disconnect()  # <-- إضافة await هنا
 
 
 app = FastAPI(lifespan=lifespan)
